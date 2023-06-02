@@ -1,0 +1,49 @@
+Tree of space deadlock 
+
+To introduce a deadlock in the given Java code, we need to create a scenario where multiple threads are waiting for resources that are held by each other, resulting in a circular dependency. In this case, we can modify the lock method to create a deadlock.
+
+Here's an updated version of the lock method that introduces a deadlock:
+
+?????????????????????????????????????????????????????????????????????????????????????????
+
+public static boolean lock(Node node, int id) {
+    if (node.isLocked) {
+        return false;
+    }
+
+    if (node.anc_locked > 0 || node.des_locked > 0) {
+        return false;
+    }
+
+    Node cur = node.parent;
+
+    while (cur != null) {
+        synchronized (cur) {  // Acquire lock on the current node's parent
+            cur.des_locked += 1;
+            cur = cur.parent;
+        }
+    }
+
+    informDescendant(node, 1);
+    synchronized (node) {  // Acquire lock on the current node
+        node.isLocked = true;
+        node.id = id;
+
+        try {
+            Thread.sleep(1000);  // Introduce a delay to create a timing issue
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    return true;
+}
+
+
+
+
+In the modified code, we added the synchronized keyword before accessing the cur and node objects, acquiring locks on those objects. 
+By doing this, multiple threads may acquire locks on different nodes simultaneously, leading to a potential deadlock if the locks are acquired in a circular dependency.
+
+However, please note that deadlock scenarios can be complex and depend on how the code is used and the specific execution paths of the program. 
+The modified code provided here introduces a potential deadlock but may not always result in a deadlock depending on the sequence of operations.
