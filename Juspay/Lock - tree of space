@@ -1,0 +1,253 @@
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.io.*;
+
+public class Main {
+
+    static class Node {
+        String name;
+        Node parent;
+        AtomicBoolean isLocked;
+        AtomicInteger id;
+        AtomicInteger anc_locked;
+        AtomicInteger des_locked;
+        ArrayList<Node> child = new ArrayList<>();
+        public Node(String name, Node parent){
+            this.name = name;
+            this.parent = parent;
+            this.isLocked = new AtomicBoolean(false);
+            this.id = new AtomicInteger(0);
+            this.anc_locked = new AtomicInteger(0);
+            this.des_locked = new AtomicInteger(0);
+        }
+    }
+
+    static class FastReader {
+        BufferedReader br;
+        StringTokenizer st;
+
+        public FastReader(){
+            br = new BufferedReader(new InputStreamReader(System.in));
+        }
+
+        String next(){
+            while (st == null || !st.hasMoreElements()) {
+                try {
+                    st = new StringTokenizer(br.readLine());
+                }
+                catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            return st.nextToken();
+        }
+
+        int nextInt() { return Integer.parseInt(next()); }
+
+        long nextLong() { return Long.parseLong(next()); }
+
+        String nextLine(){
+            String str = "";
+            try {
+                if(st.hasMoreTokens()){
+                    str = st.nextToken("\n");
+                }
+                else{
+                    str = br.readLine();
+                }
+            }
+            catch (IOException e) {
+                e.printStackTrace();
+            }
+            return str;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        FastReader scn = new FastReader();
+        int n = scn.nextInt();
+        int k = scn.nextInt();
+        int q = scn.nextInt();
+
+        String[] nodes = new String[n];
+        for(int i = 0 ; i < n ; i++){
+            nodes[i] = scn.nextLine();
+        }
+
+        String[] queries = new String[q];
+        for(int i = 0 ; i < q ; i++){
+            queries[i] = scn.nextLine();
+        }
+
+        Map<String, Node> map = new HashMap<>();
+        Node root = new Node(nodes[0], null);
+        map.put(nodes[0], root);
+
+        Queue<Node> queue = new LinkedList<>();
+        queue.add(root);
+        int ind = 1;
+
+        while(queue.size() > 0 && ind < n){
+            int size = queue.size();
+            while(size-- > 0){
+                Node rem = queue.remove();
+                for(int i = 1 ; i <= k && ind < n ; i++){
+                    Node node = new Node(nodes[ind], rem);
+                    map.put(nodes[ind], node);
+                    rem.child.add(node);
+                    queue.add(node);
+                    ind++;
+                }
+            }
+        }
+
+        boolean ans;
+        for(String query : queries){
+            String[] parts = query.split(" ");
+            int type = Integer.parseInt(parts[0]);
+            String nodeName = parts[1];
+            int id = Integer.parseInt(parts[2]);
+
+            Node targetNode = map.get(nodeName);
+
+            switch (type) {
+                case 1:
+                    ans = lock(targetNode, id);
+                    break;
+                case 2:
+                    ans = unlock(targetNode, id);
+                    break;
+                case 3:
+                    ans = upgrade(targetNode, id);
+                    break;
+                default:
+                    ans = false;
+            }
+
+            System.out.println(ans);
+        }
+    }
+
+    public static boolean lock(Node node, int id){
+        Lock lock = new ReentrantLock();
+
+        lock.lock();
+        try {
+            if(node.isLocked.get()){
+                return false;
+            }
+
+            if(node.anc_locked.get() > 0 || node.des_locked.get() > 0){
+                return false;
+            }
+
+            Node cur = node.parent;
+
+            while(cur != null){
+                cur.des_locked.getAndIncrement();
+                cur = cur.parent;
+            }
+
+            informDescendant(node, 1);
+            node.isLocked.set(true);
+            node.id.set(id);
+
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public static boolean unlock(Node node, int id){
+        Lock lock = new ReentrantLock();
+
+        lock.lock();
+        try {
+            if(!node.isLocked.get() || node.id.get() != id){
+                return false;
+            }
+
+            Node cur = node.parent;
+
+            while(cur != null){
+                cur.des_locked.getAndDecrement();
+                cur = cur.parent;
+            }
+
+            informDescendant(node, -1);
+            node.isLocked.set(false);
+            node.id.set(0);
+
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public static boolean upgrade(Node node, int id){
+        Lock lock = new ReentrantLock();
+
+        lock.lock();
+        try {
+            if(node.isLocked.get() || node.anc_locked.get() > 0 || node.des_locked.get() == 0){
+                return false;
+            }
+
+            ArrayList<Node> child = new ArrayList<>();
+
+            boolean res = getAllChild(node, child, id);
+            if(!res) return false;
+
+            informDescendant(node, 1);
+
+            for(Node k : node.child){
+                unlock(k, id);
+            }
+
+            node.isLocked.set(true);
+            node.id.set(id);
+
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public static void informDescendant(Node node, int val){
+        if(node == null) return;
+        node.anc_locked.getAndAdd(val);
+        for(Node des : node.child){
+            informDescendant(des, 1);
+        }
+    }
+
+    public static boolean getAllChild(Node node, ArrayList<Node> child, int id){
+        if(node == null){
+            return false;
+        }
+
+        if(node.isLocked.get()){
+            if(node.id.get() != id){
+                return false;
+            }else{
+                child.add(node);
+            }
+        }
+
+        if(node.des_locked.get() == 0){
+            return true;
+        }
+
+        for(Node k : node.child){
+            boolean res = getAllChild(k, child, id);
+            if(!res){
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
